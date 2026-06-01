@@ -1,0 +1,14 @@
+{
+  "baseUrl": "https://lister-api-staging.up.railway.app",
+  "testUser": {
+    "email": null,
+    "password": "TestP@ss123!",
+    "name": "API Test Bot"
+  },
+  "testData": {
+    "listName": "Test List API",
+    "itemText": "Test item from API suite",
+    "noteText": "Test note from API suite",
+    "searchQuery": "test"
+  }
+}
