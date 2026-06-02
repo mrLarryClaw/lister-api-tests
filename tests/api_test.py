@@ -100,7 +100,7 @@ class Client:
         self.h.headers["X-API-Key"] = key
 
     def req(self, method, path, **kw):
-        url = path if path.startswith("/api") else f"/api{path}"
+        url = path if path.startswith(("/api", "/v1")) else f"/v1{path}"
         return self.h.request(method, url, **kw)
 
     def close(self):
@@ -225,6 +225,8 @@ def test_auth(R, c, cfg, v):
             pass
     if "apiKey" in S:
         c.set_api_key(S["apiKey"])
+        # v1 endpoints only accept X-API-Key; remove Authorization to avoid conflicts
+        c.h.headers.pop("Authorization", None)
 
 
 def test_lists(R, c, cfg, v):
@@ -232,8 +234,8 @@ def test_lists(R, c, cfg, v):
     ts = datetime.now(timezone.utc).strftime("%H%M%S")
     nm = f"{td.get('listName', 'Test List')} {ts}"
 
-    # GET /api/lists
-    check(R, c, "lists", "Get all lists", "GET", "/api/lists",
+    # GET /v1/lists
+    check(R, c, "lists", "Get all lists", "GET", "/v1/lists",
           expected=200, verbose=v)
     # Extract lists from response
     if S.get("_last_resp") and S["_last_resp"].status_code == 200:
@@ -250,8 +252,8 @@ def test_lists(R, c, cfg, v):
             R.record("lists", f"Default: {d}", "pass" if found else "fail",
                      detail="not found" if not found else None)
 
-    # POST /api/lists
-    check(R, c, "lists", "Create list", "POST", "/api/lists",
+    # POST /v1/lists
+    check(R, c, "lists", "Create list", "POST", "/v1/lists",
           expected=201, json=dict(name=nm, description="Created by API test"), verbose=v)
     # Extract list ID from nested response
     if S.get("_last_resp") and S["_last_resp"].status_code == 201:
@@ -261,12 +263,12 @@ def test_lists(R, c, cfg, v):
         except Exception:
             pass
 
-    # GET /api/lists/{list_id}
-    check(R, c, "lists", "Get list by ID", "GET", "/api/lists/{testListId}",
+    # GET /v1/lists/{list_id}
+    check(R, c, "lists", "Get list by ID", "GET", "/v1/lists/{testListId}",
           expected=200, verbose=v, skip_if=lambda s: "testListId" not in s)
 
-    # PUT /api/lists/{list_id}
-    check(R, c, "lists", "Update list", "PUT", "/api/lists/{testListId}",
+    # PUT /v1/lists/{list_id}
+    check(R, c, "lists", "Update list", "PUT", "/v1/lists/{testListId}",
           expected=200, json=dict(name=f"{nm} (updated)"), verbose=v,
           skip_if=lambda s: "testListId" not in s)
 
@@ -275,8 +277,8 @@ def test_items(R, c, cfg, v):
     td = cfg["testData"]
     si = lambda s: "testListId" not in s
 
-    # POST /api/lists/{list_id}/items — type, status required; listId NOT in body (derived from URL)
-    check(R, c, "items", "Add item", "POST", "/api/lists/{testListId}/items",
+    # POST /v1/lists/{list_id}/items — type, status required; listId NOT in body (derived from URL)
+    check(R, c, "items", "Add item", "POST", "/v1/lists/{testListId}/items",
           expected=201, json=dict(content=td.get("itemText", "test item"),
                                     type="text", status="new", isPriority=True),
           verbose=v, skip_if=si)
@@ -288,7 +290,7 @@ def test_items(R, c, cfg, v):
             pass
 
     # Add second item for move/delete
-    check(R, c, "items", "Add second item", "POST", "/api/lists/{testListId}/items",
+    check(R, c, "items", "Add second item", "POST", "/v1/lists/{testListId}/items",
           expected=201, json=dict(content="test item #2", type="text", status="new"),
           verbose=v, skip_if=si)
     if S.get("_last_resp") and S["_last_resp"].status_code == 201:
@@ -298,36 +300,36 @@ def test_items(R, c, cfg, v):
         except Exception:
             pass
 
-    # GET /api/lists/{list_id}/items
-    check(R, c, "items", "Get items in list", "GET", "/api/lists/{testListId}/items",
+    # GET /v1/lists/{list_id}/items
+    check(R, c, "items", "Get items in list", "GET", "/v1/lists/{testListId}/items",
           expected=200, verbose=v, skip_if=si)
 
-    # PATCH /api/items/{item_id} — update item
-    check(R, c, "items", "Update item text", "PATCH", "/api/items/{testItemId}",
+    # PATCH /v1/items/{item_id} — update item
+    check(R, c, "items", "Update item text", "PATCH", "/v1/items/{testItemId}",
           expected=200, json=dict(content="test item (updated)"), verbose=v,
           skip_if=lambda s: "testItemId" not in s)
 
-    # POST /api/items/{item_id}/move — requires targetListId
+    # POST /v1/items/{item_id}/move — requires targetListId
     if "allLists" in S and S["allLists"]:
         tid = S["allLists"][0].get("id") or S["allLists"][0].get("_id")
         check(R, c, "items", "Move item", "POST",
-              f"/api/items/{{testItemId2}}/move",
+              f"/v1/items/{{testItemId2}}/move",
               expected=200, json=dict(targetListId=tid), verbose=v,
               skip_if=lambda s: "testItemId2" not in s)
 
-    # PATCH /api/items/{item_id} — mark complete
-    check(R, c, "items", "Mark complete", "PATCH", "/api/items/{testItemId}",
+    # PATCH /v1/items/{item_id} — mark complete
+    check(R, c, "items", "Mark complete", "PATCH", "/v1/items/{testItemId}",
           expected=200, json=dict(status="complete"), verbose=v,
           skip_if=lambda s: "testItemId" not in s)
 
 
 def test_priority(R, c, cfg, v):
-    # GET /api/items/priority
-    check(R, c, "priority", "Get priority items", "GET", "/api/items/priority",
+    # GET /v1/items/priority
+    check(R, c, "priority", "Get priority items", "GET", "/v1/items/priority",
           expected=200, verbose=v)
 
     # Un-priority the test item
-    check(R, c, "priority", "Un-priority item", "PATCH", "/api/items/{testItemId}",
+    check(R, c, "priority", "Un-priority item", "PATCH", "/v1/items/{testItemId}",
           expected=200, json=dict(isPriority=False), verbose=v,
           skip_if=lambda s: "testItemId" not in s)
 
@@ -336,8 +338,8 @@ def test_notes(R, c, cfg, v):
     td = cfg["testData"]
     si = lambda s: "testItemId" not in s
 
-    # POST /api/items/{item_id}/notes — uses `content` not `text`, returns 201
-    check(R, c, "notes", "Add note", "POST", "/api/items/{testItemId}/notes",
+    # POST /v1/items/{item_id}/notes — uses `content` not `text`, returns 201
+    check(R, c, "notes", "Add note", "POST", "/v1/items/{testItemId}/notes",
           expected=201, json=dict(content=td.get("noteText", "test note")),
           verbose=v, skip_if=si)
     if S.get("_last_resp") and S["_last_resp"].status_code == 201:
@@ -348,7 +350,7 @@ def test_notes(R, c, cfg, v):
             pass
 
     # Add second note for delete test
-    check(R, c, "notes", "Add second note", "POST", "/api/items/{testItemId}/notes",
+    check(R, c, "notes", "Add second note", "POST", "/v1/items/{testItemId}/notes",
           expected=201, json=dict(content="test note #2"), verbose=v, skip_if=si)
     if S.get("_last_resp") and S["_last_resp"].status_code == 201:
         try:
@@ -357,37 +359,37 @@ def test_notes(R, c, cfg, v):
         except Exception:
             pass
 
-    # PUT /api/items/{item_id}/notes/{note_id} — uses `content` field
-    check(R, c, "notes", "Update note", "PUT", "/api/items/{testItemId}/notes/{testNoteId}",
+    # PUT /v1/items/{item_id}/notes/{note_id} — uses `content` field
+    check(R, c, "notes", "Update note", "PUT", "/v1/items/{testItemId}/notes/{testNoteId}",
           expected=200, json=dict(content="test note (updated)"), verbose=v, skip_if=si)
 
-    # PATCH /api/items/{item_id}/notes/{note_id}/status — status must be 'new' or 'complete'
+    # PATCH /v1/items/{item_id}/notes/{note_id}/status — status must be 'new' or 'complete'
     check(R, c, "notes", "Update note status", "PATCH",
-          "/api/items/{testItemId}/notes/{testNoteId}/status",
+          "/v1/items/{testItemId}/notes/{testNoteId}/status",
           expected=200, json=dict(status="complete"), verbose=v, skip_if=si)
 
-    # DELETE /api/items/{item_id}/notes/{note_id}
+    # DELETE /v1/items/{item_id}/notes/{note_id}
     check(R, c, "notes", "Delete note", "DELETE",
-          "/api/items/{testItemId}/notes/{testNoteId2}",
+          "/v1/items/{testItemId}/notes/{testNoteId2}",
           expected=200, verbose=v, skip_if=si)
 
 
 def test_search(R, c, cfg, v):
     q = cfg["testData"].get("searchQuery", "test")
-    # GET /api/search
-    check(R, c, "search", "Basic search", "GET", "/api/search",
+    # GET /v1/search
+    check(R, c, "search", "Basic search", "GET", "/v1/search",
           expected=200, params=dict(q=q), verbose=v)
-    check(R, c, "search", "Search with limit", "GET", "/api/search",
+    check(R, c, "search", "Search with limit", "GET", "/v1/search",
           expected=200, params=dict(q=q, limit=2), verbose=v)
-    check(R, c, "search", "Search with notes", "GET", "/api/search",
+    check(R, c, "search", "Search with notes", "GET", "/v1/search",
           expected=200, params=dict(q=q, includeNotes="true"), verbose=v)
 
 
 def test_summary(R, c, cfg, v):
-    # GET /api/lists/summary
-    check(R, c, "summary", "Get summary", "GET", "/api/lists/summary",
+    # GET /v1/lists/summary
+    check(R, c, "summary", "Get summary", "GET", "/v1/lists/summary",
           expected=200, verbose=v)
-    check(R, c, "summary", "Summary with archived", "GET", "/api/lists/summary",
+    check(R, c, "summary", "Summary with archived", "GET", "/v1/lists/summary",
           expected=200, params=dict(include_archived="true"), verbose=v)
 
 
@@ -395,7 +397,7 @@ def test_archive(R, c, cfg, v):
     ts = datetime.now(timezone.utc).strftime("%H%M%S")
 
     # Create a list to archive
-    check(R, c, "archive", "Create list for archive", "POST", "/api/lists",
+    check(R, c, "archive", "Create list for archive", "POST", "/v1/lists",
           expected=201, json=dict(name=f"Archive Test {ts}"), verbose=v)
     if S.get("_last_resp") and S["_last_resp"].status_code == 201:
         try:
@@ -404,18 +406,18 @@ def test_archive(R, c, cfg, v):
         except Exception:
             pass
 
-    # PUT /api/lists/{list_id}/archive — archive
-    check(R, c, "archive", "Archive list", "PUT", "/api/lists/{archiveListId}/archive",
+    # PUT /v1/lists/{list_id}/archive — archive
+    check(R, c, "archive", "Archive list", "PUT", "/v1/lists/{archiveListId}/archive",
           expected=200, json=dict(archived=True), verbose=v,
           skip_if=lambda s: "archiveListId" not in s)
 
-    # GET /api/lists?includeArchived=true — verify it appears
-    check(R, c, "archive", "Get archived lists", "GET", "/api/lists",
+    # GET /v1/lists?includeArchived=true — verify it appears
+    check(R, c, "archive", "Get archived lists", "GET", "/v1/lists",
           expected=200, params=dict(includeArchived="true"), verbose=v,
           skip_if=lambda s: "archiveListId" not in s)
 
-    # PUT /api/lists/{list_id}/archive — unarchive
-    check(R, c, "archive", "Unarchive list", "PUT", "/api/lists/{archiveListId}/archive",
+    # PUT /v1/lists/{list_id}/archive — unarchive
+    check(R, c, "archive", "Unarchive list", "PUT", "/v1/lists/{archiveListId}/archive",
           expected=200, json=dict(archived=False), verbose=v,
           skip_if=lambda s: "archiveListId" not in s)
 
@@ -436,7 +438,7 @@ def test_sharing(R, c, cfg, v):
             pass
 
     # Create a list to share
-    check(R, c, "sharing", "Create share list", "POST", "/api/lists",
+    check(R, c, "sharing", "Create share list", "POST", "/v1/lists",
           expected=201, json=dict(name=f"Share Test {ts}"), verbose=v)
     if S.get("_last_resp") and S["_last_resp"].status_code == 201:
         try:
@@ -445,25 +447,25 @@ def test_sharing(R, c, cfg, v):
         except Exception:
             pass
 
-    # POST /api/lists/{list_id}/share — requires userId (not email), permission: read/edit/admin
+    # POST /v1/lists/{list_id}/share — requires userId (not email), permission: read/edit/admin
     if "shareUserId" in S and "shareListId" in S:
-        check(R, c, "sharing", "Share list", "POST", "/api/lists/{shareListId}/share",
+        check(R, c, "sharing", "Share list", "POST", "/v1/lists/{shareListId}/share",
               expected=200,
               json=dict(userId=S["shareUserId"], permission="read"),
               verbose=v, skip_if=lambda s: "shareListId" not in s)
     else:
         R.record("sharing", "Share list", "skip", detail="shareUserId not available")
 
-    # GET /api/lists/{list_id}/users
+    # GET /v1/lists/{list_id}/users
     check(R, c, "sharing", "List users with access", "GET",
-          "/api/lists/{shareListId}/users",
+          "/v1/lists/{shareListId}/users",
           expected=200, verbose=v,
           skip_if=lambda s: "shareListId" not in s)
 
-    # Remove shared user — DELETE /api/lists/{list_id}/users/{user_id}
+    # Remove shared user — DELETE /v1/lists/{list_id}/users/{user_id}
     if "shareUserId" in S and "shareListId" in S:
         check(R, c, "sharing", "Remove user", "DELETE",
-              f"/api/lists/{{shareListId}}/users/{{shareUserId}}",
+              f"/v1/lists/{{shareListId}}/users/{{shareUserId}}",
               expected=200, verbose=v)
     else:
         R.record("sharing", "Remove user", "skip", detail="user ID not found")
@@ -474,9 +476,9 @@ def test_sharing(R, c, cfg, v):
 def test_export(R, c, cfg, v):
     si = lambda s: "testListId" not in s
     # Export uses POST with body
-    check(R, c, "export", "Export JSON", "POST", "/api/lists/{testListId}/export",
+    check(R, c, "export", "Export JSON", "POST", "/v1/lists/{testListId}/export",
           expected=200, json=dict(format="json"), verbose=v, skip_if=si)
-    check(R, c, "export", "Export HTML", "POST", "/api/lists/{testListId}/export",
+    check(R, c, "export", "Export HTML", "POST", "/v1/lists/{testListId}/export",
           expected=200, json=dict(format="html"), verbose=v, skip_if=si)
 def test_cleanup(R, c, cfg, v):
     print("\n🧹 Cleaning up...")
@@ -485,13 +487,13 @@ def test_cleanup(R, c, cfg, v):
     for k in ["testItemId", "testItemId2"]:
         if k in S:
             check(R, c, "cleanup", f"Delete item {k}", "DELETE",
-                  f"/api/items/{S[k]}", expected=200, verbose=v)
+                  f"/v1/items/{S[k]}", expected=200, verbose=v)
 
     # Delete test lists
     for k in ["testListId", "archiveListId", "shareListId"]:
         if k in S:
             check(R, c, "cleanup", f"Delete list {k}", "DELETE",
-                  f"/api/lists/{S[k]}", expected=200, verbose=v)
+                  f"/v1/lists/{S[k]}", expected=200, verbose=v)
 
     # DELETE /api/auth/me — user self-deletion (now functional)
     # Do this BEFORE deleting API keys so auth still works
